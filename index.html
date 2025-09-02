@@ -30,39 +30,71 @@
           if (a) { a.href = url; a.textContent = url; }
         }
 
+        function openInNewTab(url) {
+          if (!url) return;
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
         try {
-          // Allow overriding via query param ?u=...
           const qp = new URLSearchParams(location.search);
           const qpUrl = qp.get('u');
-          if (qpUrl) {
-            setAnchor(qpUrl);
-            return void location.replace(qpUrl);
-          }
-
-          let url = null, lastErr = null;
+          
+          let defaultUrl = null, lastErr = null;
+          
+          // Get default URL from .env files
           for (const path of targets) {
             try {
               const res = await fetch(path, { cache: 'no-store' });
-              if (!res.ok) throw new Error(`${path} responded ${res.status}`);
+              if (!res.ok) continue;
               const text = await res.text();
-              url = extractUrl(text);
-              if (url) break;
+              defaultUrl = extractUrl(text);
+              if (defaultUrl) break;
             } catch (e) {
               lastErr = e;
             }
           }
 
-          if (!url) throw new Error('URL not found in .env(.example). ' + (lastErr ? String(lastErr) : ''));
+          // If we have a query parameter URL
+          if (qpUrl) {
+            // Open the query parameter URL in a new tab
+            openInNewTab(qpUrl);
+            
+            // If we also have a default URL, open it in another tab
+            if (defaultUrl) {
+              // Small delay to prevent popup blockers
+              setTimeout(() => openInNewTab(defaultUrl), 100);
+              setAnchor(defaultUrl);
+              // Keep the page on the default URL
+              location.replace(defaultUrl);
+              return;
+            } else {
+              // If no default URL, just redirect to the query parameter URL
+              setAnchor(qpUrl);
+              location.replace(qpUrl);
+              return;
+            }
+          }
 
-          // Basic sanity check
-          if (!/^https?:\/\//i.test(url)) throw new Error('Invalid URL (must start with http:// or https://): ' + url);
+          // If no query parameter but we have a default URL
+          if (defaultUrl) {
+            // Basic sanity check for default URL
+            if (!/^https?:\/\//i.test(defaultUrl)) {
+              throw new Error('Invalid default URL (must start with http:// or https://): ' + defaultUrl);
+            }
+            setAnchor(defaultUrl);
+            location.replace(defaultUrl);
+            return;
+          }
 
-          setAnchor(url);
-          location.replace(url);
+          // If we get here, no URLs were found
+          throw new Error('No URL specified. Set a default URL in .env.example or provide a ?u= parameter. ' + 
+                         (lastErr ? String(lastErr) : ''));
+
         } catch (e) {
           const status = document.getElementById('status');
           const err = document.getElementById('error');
-          if (status) status.textContent = 'Could not determine redirect target. Ensure .env.example contains a line like: URL=https://your-target';
+          if (status) status.textContent = 'Could not determine redirect target. ' + 
+            'Ensure .env.example contains a line like: URL=https://your-target or provide a ?u= parameter.';
           if (err) err.textContent = String(e);
         }
       })();
